@@ -20,7 +20,8 @@ Output MUST be valid JSON matching this structure:
   "affectedAreas": ["Area 1"],
   "risks": ["Risk 1"],
   "reviewOrder": [{ "file": "file.ts", "reason": "reason" }],
-  "confidence": 0.9
+  "confidence": 0.9,
+  "steps": [{ "id": 1, "title": "Added input validation", "description": "Reject invalid requests before rate limiting.", "file": "NotificationService.cs", "startLine": 31, "endLine": 35, "importance": "high", "category": "validation" }]
 }`;
 
     const userPrompt = `Analyze this PR:\nTitle: ${context.title}\nDescription: ${context.description}\nDiff: ${context.compressedDiff}`;

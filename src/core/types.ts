@@ -14,6 +14,17 @@ export interface PRContext {
   compressedDiff: string;
 }
 
+export interface ReviewStep {
+  id: number;
+  title: string;
+  description: string;
+  file: string;
+  startLine: number;
+  endLine: number;
+  importance: "high" | "medium" | "low";
+  category: string;
+}
+
 export interface AnalysisResult {
   purpose: string;
   summary: string[];
@@ -28,6 +39,7 @@ export interface AnalysisResult {
     reason: string;
   }[];
   confidence: number;
+  steps?: ReviewStep[];
 }
 
 export interface ProviderConfig {

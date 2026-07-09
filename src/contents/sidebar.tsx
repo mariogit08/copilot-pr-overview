@@ -33,9 +33,102 @@ const Sidebar = () => {
   const [streamingChunk, setStreamingChunk] = useState<string>("")
   const [isExpanded, setIsExpanded] = useState(true)
 
+  // Guided Review State
+  const [isGuidedReviewActive, setIsGuidedReviewActive] = useState(false)
+  const [currentStepIndex, setCurrentStepIndex] = useState(0)
+
   useEffect(() => {
     load();
   }, [load]);
+
+  const startGuidedReview = () => {
+    setIsGuidedReviewActive(true);
+    // Don't reset currentStepIndex so it resumes where it left off
+  };
+
+  const exitGuidedReview = () => {
+    setIsGuidedReviewActive(false);
+    clearHighlight();
+  };
+
+  const nextStep = () => {
+    if (result && result.steps && currentStepIndex < result.steps.length - 1) {
+      setCurrentStepIndex(prev => prev + 1);
+    }
+  };
+
+  const prevStep = () => {
+    if (currentStepIndex > 0) {
+      setCurrentStepIndex(prev => prev - 1);
+    }
+  };
+
+  const clearHighlight = () => {
+    document.querySelectorAll('.guided-review-highlight').forEach(el => {
+      el.classList.remove('guided-review-highlight');
+      (el as HTMLElement).style.backgroundColor = '';
+    });
+  };
+
+  const navigateToStepDOM = (step: any) => {
+    clearHighlight();
+    
+    // Find file container
+    const fileElements = Array.from(document.querySelectorAll(`[data-path="${step.file}"]`));
+    let fileContainer: HTMLElement | null = null;
+    for (const el of fileElements) {
+      const container = el.closest('.file') as HTMLElement;
+      if (container) {
+        fileContainer = container;
+        break;
+      }
+    }
+
+    if (!fileContainer) return;
+
+    // Expand if collapsed
+    const expandBtn = fileContainer.querySelector('.js-details-target[aria-expanded="false"]');
+    if (expandBtn) {
+      (expandBtn as HTMLElement).click();
+    }
+
+    // Scroll and highlight after a tiny delay to allow expand
+    setTimeout(() => {
+      if (!fileContainer) return;
+      fileContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      
+      // Highlight lines
+      for (let i = step.startLine; i <= step.endLine; i++) {
+        // GitHub lines: unified or split view
+        const lineNums = Array.from(fileContainer.querySelectorAll(`td[data-line-number="${i}"]`));
+        lineNums.forEach(td => {
+          const row = td.closest('tr');
+          if (row) {
+            row.classList.add('guided-review-highlight');
+            row.style.backgroundColor = 'rgba(255, 255, 0, 0.2)';
+            row.style.transition = 'background-color 0.3s ease';
+          }
+        });
+      }
+    }, 300);
+  };
+
+  useEffect(() => {
+    if (!isGuidedReviewActive || !result || !result.steps || result.steps.length === 0) return;
+
+    const step = result.steps[currentStepIndex];
+    if (!step) return;
+
+    // Check if we are on the files tab
+    const filesTab = document.querySelector('a.tabnav-tab[href$="/files"]');
+    if (filesTab && !filesTab.classList.contains('selected')) {
+      (filesTab as HTMLElement).click();
+      setTimeout(() => navigateToStepDOM(step), 1000);
+      return;
+    }
+
+    navigateToStepDOM(step);
+  }, [isGuidedReviewActive, currentStepIndex, result]);
 
   const handleAnalyze = async () => {
     const info = getPRInfo();
@@ -140,7 +233,69 @@ const Sidebar = () => {
 
         {result && !analyzing && (
           <div className="space-y-6">
-            <section>
+            {isGuidedReviewActive && result.steps ? (
+              <div className="space-y-4">
+                <div className="flex justify-between items-center text-xs font-semibold text-slate-500 uppercase">
+                  <span>Step {currentStepIndex + 1} of {result.steps.length}</span>
+                  <span className={`px-2 py-1 rounded text-white ${
+                    result.steps[currentStepIndex].importance === 'high' ? 'bg-red-500' :
+                    result.steps[currentStepIndex].importance === 'medium' ? 'bg-amber-500' : 'bg-blue-500'
+                  }`}>
+                    {result.steps[currentStepIndex].importance}
+                  </span>
+                </div>
+                
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                  {result.steps[currentStepIndex].title}
+                </h3>
+                
+                <p className="text-slate-700 dark:text-slate-300 leading-relaxed bg-blue-50 dark:bg-blue-900/20 p-3 rounded border border-blue-100 dark:border-blue-800">
+                  {result.steps[currentStepIndex].description}
+                </p>
+                
+                <div className="text-xs text-slate-500 bg-slate-50 dark:bg-slate-800 p-2 rounded">
+                  File: <span className="font-mono">{result.steps[currentStepIndex].file}</span><br/>
+                  Lines: {result.steps[currentStepIndex].startLine} - {result.steps[currentStepIndex].endLine}
+                </div>
+
+                <div className="flex gap-2 pt-4">
+                  <button 
+                    onClick={prevStep}
+                    disabled={currentStepIndex === 0}
+                    className="flex-1 py-2 px-4 rounded border border-slate-300 disabled:opacity-50 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700 dark:text-white transition-colors"
+                  >
+                    Previous
+                  </button>
+                  <button 
+                    onClick={nextStep}
+                    disabled={currentStepIndex === result.steps.length - 1}
+                    className="flex-1 py-2 px-4 rounded bg-blue-600 text-white disabled:opacity-50 hover:bg-blue-700 transition-colors"
+                  >
+                    Next
+                  </button>
+                </div>
+                <div className="pt-2">
+                  <button 
+                    onClick={exitGuidedReview}
+                    className="w-full py-2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 underline text-sm transition-colors"
+                  >
+                    Exit Guided Review
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {result.steps && result.steps.length > 0 && (
+                  <div className="mb-2">
+                    <button
+                      onClick={startGuidedReview}
+                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-4 rounded shadow-sm flex items-center justify-center gap-2 transition-colors"
+                    >
+                      <span>🧭</span> Start Guided Review
+                    </button>
+                  </div>
+                )}
+                <section>
               <h3 className="font-semibold text-slate-900 dark:text-white mb-2 flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-1">
                 <span>✅</span> Purpose
               </h3>
@@ -199,6 +354,8 @@ const Sidebar = () => {
                 Re-analyze PR
               </button>
             </div>
+              </>
+            )}
           </div>
         )}
       </div>
