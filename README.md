@@ -1,33 +1,40 @@
-This is a [Plasmo extension](https://docs.plasmo.com/) project bootstrapped with [`plasmo init`](https://www.npmjs.com/package/plasmo).
+# GitHub Guided PR Review Extension
+
+An AI-powered browser extension that transforms standard GitHub Pull Requests into an interactive, step-by-step guided tutorial experience. 
+
+Instead of scrolling through hundreds of lines of diffs, this extension breaks down complex Pull Requests into logical steps, guiding the reviewer through the architectural changes and specific code snippets with interactive overlays.
+
+## Features
+
+- **Step-by-Step Guided Walkthrough**: Navigates through a Pull Request sequentially, explaining the "why" and "how" of the changes.
+- **Focus Mode**: Automatically scrolls to the relevant code and dims the rest of the page, spotlighting exactly what you need to review.
+- **Interactive Snippet Markers**: Places blue `i` markers in the gutter next to specific lines of code. Hovering reveals detailed explanations for that specific line.
+- **Smart DOM Syncing**: Uses ultra-robust alphanumeric fuzzy-matching to accurately anchor AI-generated insights to GitHub's dynamic DOM, ignoring formatting quirks and invisible characters.
+- **Powered by Groq**: Uses Llama 3.3 via Groq for blazingly fast inference and step generation.
 
 ## Getting Started
 
-First, run the development server:
+1. Clone this repository.
+2. Install dependencies:
+   ```bash
+   pnpm install
+   # or
+   npm install
+   ```
+3. Create a `.env.local` file in the root directory and add your Groq API key:
+   ```env
+   PLASMO_PUBLIC_GROQ_API_KEY=your_groq_api_key_here
+   ```
+4. Run the development server:
+   ```bash
+   pnpm dev
+   # or
+   npm run dev
+   ```
+5. Load the unpacked extension in Chrome from the `build/chrome-mv3-dev` folder.
 
-```bash
-pnpm dev
-# or
-npm run dev
-```
-
-Open your browser and load the appropriate development build. For example, if you are developing for the chrome browser, using manifest v3, use: `build/chrome-mv3-dev`.
-
-You can start editing the popup by modifying `popup.tsx`. It should auto-update as you make changes. To add an options page, simply add a `options.tsx` file to the root of the project, with a react component default exported. Likewise to add a content page, add a `content.ts` file to the root of the project, importing some module and do some logic, then reload the extension on your browser.
-
-For further guidance, [visit our Documentation](https://docs.plasmo.com/)
-
-## Making production build
-
-Run the following:
-
-```bash
-pnpm build
-# or
-npm run build
-```
-
-This should create a production bundle for your extension, ready to be zipped and published to the stores.
-
-## Submit to the webstores
-
-The easiest way to deploy your Plasmo extension is to use the built-in [bpp](https://bpp.browser.market) GitHub action. Prior to using this action however, make sure to build your extension and upload the first version to the store to establish the basic credentials. Then, simply follow [this setup instruction](https://docs.plasmo.com/framework/workflows/submit) and you should be on your way for automated submission!
+## Tech Stack
+- **Framework**: [Plasmo](https://docs.plasmo.com/)
+- **UI**: React + Vanilla CSS (Injected into GitHub DOM)
+- **AI**: Groq API (Llama 3.3)
+- **State Management**: Zustand
