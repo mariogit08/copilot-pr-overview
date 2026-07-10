@@ -1,3 +1,9 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+::highlight(pr-extension-highlight) {
+  background-color: rgba(210, 153, 34, 0.4);
+  text-decoration: underline dashed #d29922;
+  text-decoration-thickness: 2px;
+}

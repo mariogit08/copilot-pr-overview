@@ -1,5 +1,5 @@
 import { Octokit } from "@octokit/rest";
-import { PRContext } from "../types";
+import type { PRContext } from "../types";
 
 export const buildPRContext = async (
   owner: string, 

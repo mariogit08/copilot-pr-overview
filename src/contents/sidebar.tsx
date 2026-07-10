@@ -5,7 +5,8 @@ import { useSettingsStore } from "../store/settings"
 import { providers } from "../core/ai-providers"
 import { buildPRContext } from "../core/context-builder/github"
 import { getCacheKey, getCachedAnalysis, setCachedAnalysis } from "../store/cache"
-import { AnalysisResult } from "../core/types"
+import type { AnalysisResult } from "../core/types"
+import { useWalkthroughStore } from "../core/walkthrough-state"
 
 export const config: PlasmoCSConfig = {
   matches: ["https://github.com/*/*/pull/*"],
@@ -33,104 +34,53 @@ const Sidebar = () => {
   const [streamingChunk, setStreamingChunk] = useState<string>("")
   const [isExpanded, setIsExpanded] = useState(true)
 
-  // Guided Review State
-  const [isGuidedReviewActive, setIsGuidedReviewActive] = useState(false)
-  const [currentStepIndex, setCurrentStepIndex] = useState(0)
+  // Guided Review State (from store)
+  const {
+    isActive: isGuidedReviewActive,
+    currentStepIndex,
+    startWalkthrough,
+    stopWalkthrough,
+    nextStep,
+    prevStep
+  } = useWalkthroughStore()
 
   useEffect(() => {
     load();
   }, [load]);
 
   const startGuidedReview = () => {
-    setIsGuidedReviewActive(true);
-    // Don't reset currentStepIndex so it resumes where it left off
+    if (result && result.steps) {
+      startWalkthrough(result.steps.map(step => ({
+        path: step.file,
+        title: step.title,
+        startLine: step.startLine,
+        endLine: step.endLine,
+        explanation: step.description,
+        pieces: step.pieces,
+        reviewerTips: step.reviewerTips,
+        challengeQuestions: step.challengeQuestions
+      })));
+    }
   };
 
   const exitGuidedReview = () => {
-    setIsGuidedReviewActive(false);
-    clearHighlight();
-  };
-
-  const nextStep = () => {
-    if (result && result.steps && currentStepIndex < result.steps.length - 1) {
-      setCurrentStepIndex(prev => prev + 1);
-    }
-  };
-
-  const prevStep = () => {
-    if (currentStepIndex > 0) {
-      setCurrentStepIndex(prev => prev - 1);
-    }
-  };
-
-  const clearHighlight = () => {
-    document.querySelectorAll('.guided-review-highlight').forEach(el => {
-      el.classList.remove('guided-review-highlight');
-      (el as HTMLElement).style.backgroundColor = '';
-    });
-  };
-
-  const navigateToStepDOM = (step: any) => {
-    clearHighlight();
-    
-    // Find file container
-    const fileElements = Array.from(document.querySelectorAll(`[data-path="${step.file}"]`));
-    let fileContainer: HTMLElement | null = null;
-    for (const el of fileElements) {
-      const container = el.closest('.file') as HTMLElement;
-      if (container) {
-        fileContainer = container;
-        break;
-      }
-    }
-
-    if (!fileContainer) return;
-
-    // Expand if collapsed
-    const expandBtn = fileContainer.querySelector('.js-details-target[aria-expanded="false"]');
-    if (expandBtn) {
-      (expandBtn as HTMLElement).click();
-    }
-
-    // Scroll and highlight after a tiny delay to allow expand
-    setTimeout(() => {
-      if (!fileContainer) return;
-      fileContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      
-      // Highlight lines
-      for (let i = step.startLine; i <= step.endLine; i++) {
-        // GitHub lines: unified or split view
-        const lineNums = Array.from(fileContainer.querySelectorAll(`td[data-line-number="${i}"]`));
-        lineNums.forEach(td => {
-          const row = td.closest('tr');
-          if (row) {
-            row.classList.add('guided-review-highlight');
-            row.style.backgroundColor = 'rgba(255, 255, 0, 0.2)';
-            row.style.transition = 'background-color 0.3s ease';
-          }
-        });
-      }
-    }, 300);
+    stopWalkthrough();
   };
 
   useEffect(() => {
-    if (!isGuidedReviewActive || !result || !result.steps || result.steps.length === 0) return;
-
-    const step = result.steps[currentStepIndex];
-    if (!step) return;
-
-    // Check if we are on the files tab
-    const filesTab = document.querySelector('a.tabnav-tab[href$="/files"]');
-    if (filesTab && !filesTab.classList.contains('selected')) {
-      (filesTab as HTMLElement).click();
-      setTimeout(() => navigateToStepDOM(step), 1000);
-      return;
+    if (isGuidedReviewActive) {
+      const filesTab = document.querySelector('a.tabnav-tab[href$="/files"]');
+      if (filesTab && !filesTab.classList.contains('selected')) {
+        (filesTab as HTMLElement).click();
+      }
     }
+  }, [isGuidedReviewActive, currentStepIndex]);
 
-    navigateToStepDOM(step);
-  }, [isGuidedReviewActive, currentStepIndex, result]);
+  // We no longer manually mutate the DOM here.
+  // The global Overlay component (in contents/overlay.tsx) reacts to 
+  // the WalkthroughStore state and handles dimming, highlight, and scrolling.
 
-  const handleAnalyze = async () => {
+  const handleAnalyze = async (force: boolean = false) => {
     const info = getPRInfo();
     if (!info) {
       setError("Could not determine PR info from URL.");
@@ -140,19 +90,21 @@ const Sidebar = () => {
     setAnalyzing(true);
     setError(null);
     setStreamingChunk("");
-    
+
     try {
       // 1. Context Build
       const context = await buildPRContext(info.owner, info.repo, info.pullNumber);
-      
+
       // 2. Check Cache
       const cacheKey = getCacheKey(info.owner, info.repo, info.pullNumber, context.latestCommitSha);
-      const cached = await getCachedAnalysis(cacheKey);
-      
-      if (cached) {
-        setResult(cached);
-        setAnalyzing(false);
-        return;
+
+      if (!force) {
+        const cached = await getCachedAnalysis(cacheKey);
+        if (cached) {
+          setResult(cached);
+          setAnalyzing(false);
+          return;
+        }
       }
 
       // 3. Provider Call
@@ -176,7 +128,7 @@ const Sidebar = () => {
 
   if (!isExpanded) {
     return (
-      <button 
+      <button
         onClick={() => setIsExpanded(true)}
         className="fixed right-4 top-24 z-[9999] bg-blue-600 text-white p-2 rounded shadow-lg hover:bg-blue-700"
       >
@@ -185,12 +137,18 @@ const Sidebar = () => {
     )
   }
 
+  // Hide the sidebar completely when the guided review is active so it doesn't distract the user
+  if (isGuidedReviewActive) {
+    return null;
+  }
+
   return (
     <div className="fixed right-4 top-24 w-[400px] max-h-[85vh] overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl z-[9999] flex flex-col text-sm">
       <div className="flex justify-between items-center p-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-t-lg sticky top-0 z-10">
         <h2 className="font-bold flex items-center gap-2 text-slate-800 dark:text-white">
           <span>⚠️</span>
           Copilot PR Overview
+          <span className="text-xs font-normal text-slate-400 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded ml-1">v1.3.3</span>
         </h2>
         <button onClick={() => setIsExpanded(false)} className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
           ✕
@@ -201,8 +159,8 @@ const Sidebar = () => {
         {!result && !analyzing && (
           <div className="text-center py-8">
             <p className="mb-4 text-slate-500">Analyze this PR to get a high-level overview, architecture impact, and review suggestions.</p>
-            <button 
-              onClick={handleAnalyze}
+            <button
+              onClick={() => handleAnalyze()}
               className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded w-full transition-colors shadow-sm"
             >
               Analyze PR
@@ -237,36 +195,35 @@ const Sidebar = () => {
               <div className="space-y-4">
                 <div className="flex justify-between items-center text-xs font-semibold text-slate-500 uppercase">
                   <span>Step {currentStepIndex + 1} of {result.steps.length}</span>
-                  <span className={`px-2 py-1 rounded text-white ${
-                    result.steps[currentStepIndex].importance === 'high' ? 'bg-red-500' :
-                    result.steps[currentStepIndex].importance === 'medium' ? 'bg-amber-500' : 'bg-blue-500'
-                  }`}>
+                  <span className={`px-2 py-1 rounded text-white ${result.steps[currentStepIndex].importance === 'high' ? 'bg-red-500' :
+                      result.steps[currentStepIndex].importance === 'medium' ? 'bg-amber-500' : 'bg-blue-500'
+                    }`}>
                     {result.steps[currentStepIndex].importance}
                   </span>
                 </div>
-                
+
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white">
                   {result.steps[currentStepIndex].title}
                 </h3>
-                
+
                 <p className="text-slate-700 dark:text-slate-300 leading-relaxed bg-blue-50 dark:bg-blue-900/20 p-3 rounded border border-blue-100 dark:border-blue-800">
                   {result.steps[currentStepIndex].description}
                 </p>
-                
+
                 <div className="text-xs text-slate-500 bg-slate-50 dark:bg-slate-800 p-2 rounded">
-                  File: <span className="font-mono">{result.steps[currentStepIndex].file}</span><br/>
+                  File: <span className="font-mono">{result.steps[currentStepIndex].file}</span><br />
                   Lines: {result.steps[currentStepIndex].startLine} - {result.steps[currentStepIndex].endLine}
                 </div>
 
                 <div className="flex gap-2 pt-4">
-                  <button 
+                  <button
                     onClick={prevStep}
                     disabled={currentStepIndex === 0}
                     className="flex-1 py-2 px-4 rounded border border-slate-300 disabled:opacity-50 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700 dark:text-white transition-colors"
                   >
                     Previous
                   </button>
-                  <button 
+                  <button
                     onClick={nextStep}
                     disabled={currentStepIndex === result.steps.length - 1}
                     className="flex-1 py-2 px-4 rounded bg-blue-600 text-white disabled:opacity-50 hover:bg-blue-700 transition-colors"
@@ -275,7 +232,7 @@ const Sidebar = () => {
                   </button>
                 </div>
                 <div className="pt-2">
-                  <button 
+                  <button
                     onClick={exitGuidedReview}
                     className="w-full py-2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 underline text-sm transition-colors"
                   >
@@ -296,64 +253,64 @@ const Sidebar = () => {
                   </div>
                 )}
                 <section>
-              <h3 className="font-semibold text-slate-900 dark:text-white mb-2 flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-1">
-                <span>✅</span> Purpose
-              </h3>
-              <p className="leading-relaxed">{result.purpose}</p>
-            </section>
+                  <h3 className="font-semibold text-slate-900 dark:text-white mb-2 flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-1">
+                    <span>✅</span> Purpose
+                  </h3>
+                  <p className="leading-relaxed">{result.purpose}</p>
+                </section>
 
-            <section>
-              <h3 className="font-semibold text-slate-900 dark:text-white mb-2 border-b border-slate-100 dark:border-slate-800 pb-1">What Changed</h3>
-              <ul className="list-disc pl-5 space-y-1">
-                {result.summary.map((item, i) => <li key={i}>{item}</li>)}
-              </ul>
-            </section>
+                <section>
+                  <h3 className="font-semibold text-slate-900 dark:text-white mb-2 border-b border-slate-100 dark:border-slate-800 pb-1">What Changed</h3>
+                  <ul className="list-disc pl-5 space-y-1">
+                    {result.summary.map((item, i) => <li key={i}>{item}</li>)}
+                  </ul>
+                </section>
 
-            {result.architecture && (
-              <section>
-                <h3 className="font-semibold text-slate-900 dark:text-white mb-2 border-b border-slate-100 dark:border-slate-800 pb-1">Architecture</h3>
-                <p className="mb-2 leading-relaxed">{result.architecture.description}</p>
-                {result.architecture.diagram && (
-                  <pre className="bg-slate-100 dark:bg-slate-800 p-3 rounded overflow-x-auto text-xs text-slate-800 dark:text-slate-300">
-                    {result.architecture.diagram}
-                  </pre>
+                {result.architecture && (
+                  <section>
+                    <h3 className="font-semibold text-slate-900 dark:text-white mb-2 border-b border-slate-100 dark:border-slate-800 pb-1">Architecture</h3>
+                    <p className="mb-2 leading-relaxed">{result.architecture.description}</p>
+                    {result.architecture.diagram && (
+                      <pre className="bg-slate-100 dark:bg-slate-800 p-3 rounded overflow-x-auto text-xs text-slate-800 dark:text-slate-300">
+                        {result.architecture.diagram}
+                      </pre>
+                    )}
+                  </section>
                 )}
-              </section>
-            )}
 
-            <section>
-              <h3 className="font-semibold text-slate-900 dark:text-white mb-2 flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-1">
-                <span>🛡️</span> Risks
-              </h3>
-              <ul className="list-disc pl-5 space-y-1 text-amber-700 dark:text-amber-400">
-                {result.risks.map((risk, i) => <li key={i}>{risk}</li>)}
-              </ul>
-            </section>
+                <section>
+                  <h3 className="font-semibold text-slate-900 dark:text-white mb-2 flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-1">
+                    <span>🛡️</span> Risks
+                  </h3>
+                  <ul className="list-disc pl-5 space-y-1 text-amber-700 dark:text-amber-400">
+                    {result.risks.map((risk, i) => <li key={i}>{risk}</li>)}
+                  </ul>
+                </section>
 
-            <section>
-              <h3 className="font-semibold text-slate-900 dark:text-white mb-2 flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-1">
-                <span>📄</span> Review Order
-              </h3>
-              <div className="space-y-3 mt-3">
-                {result.reviewOrder.map((order, i) => (
-                  <div key={i} className="bg-slate-50 dark:bg-slate-800 p-3 rounded border border-slate-100 dark:border-slate-700">
-                    <div className="font-medium text-slate-900 dark:text-white break-all flex gap-2">
-                      <span className="text-slate-400">{i+1}.</span> {order.file}
-                    </div>
-                    <div className="text-xs mt-1 text-slate-600 dark:text-slate-400 pl-5">{order.reason}</div>
+                <section>
+                  <h3 className="font-semibold text-slate-900 dark:text-white mb-2 flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-1">
+                    <span>📄</span> Review Order
+                  </h3>
+                  <div className="space-y-3 mt-3">
+                    {result.reviewOrder.map((order, i) => (
+                      <div key={i} className="bg-slate-50 dark:bg-slate-800 p-3 rounded border border-slate-100 dark:border-slate-700">
+                        <div className="font-medium text-slate-900 dark:text-white break-all flex gap-2">
+                          <span className="text-slate-400">{i + 1}.</span> {order.file}
+                        </div>
+                        <div className="text-xs mt-1 text-slate-600 dark:text-slate-400 pl-5">{order.reason}</div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </section>
-            
-            <div className="pt-2">
-              <button 
-                onClick={handleAnalyze}
-                className="text-xs text-blue-600 dark:text-blue-400 hover:underline w-full text-center py-2 bg-blue-50 dark:bg-blue-900/20 rounded"
-              >
-                Re-analyze PR
-              </button>
-            </div>
+                </section>
+
+                <div className="pt-2">
+                  <button
+                    onClick={() => handleAnalyze(true)}
+                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline w-full text-center py-2 bg-blue-50 dark:bg-blue-900/20 rounded"
+                  >
+                    Re-analyze PR
+                  </button>
+                </div>
               </>
             )}
           </div>

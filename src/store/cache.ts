@@ -1,10 +1,12 @@
 import { Storage } from "@plasmohq/storage";
-import { AnalysisResult } from "../core/types";
+import type { AnalysisResult } from "../core/types";
 
-const storage = new Storage();
+const storage = new Storage({
+  area: "local"
+});
 
 export const getCacheKey = (owner: string, repo: string, prNumber: number, sha: string) => 
-  `analysis_${owner}_${repo}_${prNumber}_${sha}`;
+  `analysis_v3_${owner}_${repo}_${prNumber}_${sha}`;
 
 export const getCachedAnalysis = async (key: string): Promise<AnalysisResult | null> => {
   return await storage.get<AnalysisResult>(key) || null;
