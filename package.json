@@ -1,7 +1,7 @@
 {
   "name": "copilot-pr-overview",
   "displayName": "Copilot PR Overview",
-  "version": "1.0.0",
+  "version": "1.3.3",
   "description": "AI-powered PR analysis extension.",
   "author": "Mario",
   "scripts": {
@@ -10,21 +10,22 @@
     "package": "plasmo package"
   },
   "dependencies": {
+    "@octokit/rest": "^20.1.1",
+    "@plasmohq/storage": "^1.13.0",
     "plasmo": "0.90.5",
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "zustand": "^4.5.2",
-    "@plasmohq/storage": "^1.13.0",
-    "@octokit/rest": "^20.1.1"
+    "zustand": "^4.5.2"
   },
   "devDependencies": {
+    "@types/node": "20.12.7",
     "@types/react": "18.2.79",
     "@types/react-dom": "18.2.25",
-    "@types/node": "20.12.7",
-    "typescript": "5.4.5",
-    "tailwindcss": "3.4.3",
+    "autoprefixer": "10.4.19",
+    "playwright": "^1.61.1",
     "postcss": "8.4.38",
-    "autoprefixer": "10.4.19"
+    "tailwindcss": "3.4.3",
+    "typescript": "5.4.5"
   },
   "manifest": {
     "host_permissions": [

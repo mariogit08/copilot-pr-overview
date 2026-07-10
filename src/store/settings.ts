@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { Storage } from "@plasmohq/storage";
-import { ProviderConfig } from "../core/types";
+import type { ProviderConfig } from "../core/types";
 
 const storage = new Storage();
 
@@ -10,13 +10,16 @@ interface SettingsState {
   load: () => Promise<void>;
 }
 
+const DEFAULT_CONFIG: ProviderConfig = {
+  id: "groq",
+  apiKey: process.env.PLASMO_PUBLIC_GROQ_API_KEY || "",
+  model: "llama-3.3-70b-versatile",
+  maxTokens: 4096,
+  temperature: 0.2
+};
+
 export const useSettingsStore = create<SettingsState>((set, get) => ({
-  config: {
-    id: "groq",
-    model: "llama-3.3-70b-versatile",
-    maxTokens: 4096,
-    temperature: 0.2
-  },
+  config: DEFAULT_CONFIG,
   setConfig: async (newConfig) => {
     const updated = { ...get().config, ...newConfig };
     set({ config: updated });

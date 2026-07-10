@@ -23,6 +23,9 @@ export interface ReviewStep {
   endLine: number;
   importance: "high" | "medium" | "low";
   category: string;
+  pieces?: { snippet: string; explanation: string }[];
+  reviewerTips?: string[];
+  challengeQuestions?: string[];
 }
 
 export interface AnalysisResult {

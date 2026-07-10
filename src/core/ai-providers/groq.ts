@@ -1,4 +1,4 @@
-import { AIProvider, AnalysisResult, PRContext, ProviderConfig } from "../types";
+import type { AIProvider, AnalysisResult, PRContext, ProviderConfig } from "../types";
 
 export class GroqProvider implements AIProvider {
   id = "groq";
@@ -21,8 +21,29 @@ Output MUST be valid JSON matching this structure:
   "risks": ["Risk 1"],
   "reviewOrder": [{ "file": "file.ts", "reason": "reason" }],
   "confidence": 0.9,
-  "steps": [{ "id": 1, "title": "Added input validation", "description": "Reject invalid requests before rate limiting.", "file": "NotificationService.cs", "startLine": 31, "endLine": 35, "importance": "high", "category": "validation" }]
-}`;
+  "steps": [{
+    "id": 1,
+    "title": "Added input validation",
+    "description": "Reject invalid requests before rate limiting. Explain the code deeply here.",
+    "file": "NotificationService.cs",
+    "startLine": 31,
+    "endLine": 35,
+    "importance": "high",
+    "category": "validation",
+    "pieces": [
+      {
+        "snippet": "string.IsNullOrWhiteSpace",
+        "explanation": "We use IsNullOrWhiteSpace here instead of checking for null to avoid empty string bypasses."
+      }
+    ],
+    "reviewerTips": ["Check if there are edge cases not covered by this validation.", "Consider if the regex is vulnerable to ReDoS."],
+    "challengeQuestions": ["What happens if the user passes null instead of an empty string?", "Could this validation logic be reused elsewhere?"]
+  }]
+}
+For each step, you MUST provide deep, highly detailed explanations (AT LEAST 3-4 sentences) of the code changes, explaining the 'why' and 'how'. Do NOT just summarize the line.
+You MUST generate at least one step for EVERY single file changed in the PR, including test files, configuration files, and project files. Do not skip any files.
+You MUST break the code down into 1-3 specific 'pieces' (an exact string match from the code, and a micro-explanation of why it is important), like a Senior dev explaining to a Junior. The 'pieces' array MUST NOT be empty.
+You MUST provide 'reviewerTips' (things to watch out for) and 'challengeQuestions' (questions to ask the author to challenge the code's resilience, performance, or design). These arrays MUST NOT be empty.`;
 
     const userPrompt = `Analyze this PR:\nTitle: ${context.title}\nDescription: ${context.description}\nDiff: ${context.compressedDiff}`;
 
@@ -54,16 +75,19 @@ Output MUST be valid JSON matching this structure:
     const reader = response.body?.getReader();
     const decoder = new TextDecoder("utf-8");
     let fullText = "";
+    let buffer = "";
 
     if (reader) {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n').filter(line => line.trim() !== '');
-        
-        for (const line of lines) {
+        buffer += decoder.decode(value, { stream: true });
+        let newlineIndex;
+        while ((newlineIndex = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, newlineIndex).trim();
+          buffer = buffer.slice(newlineIndex + 1);
+          
           if (line === 'data: [DONE]') continue;
           if (line.startsWith('data: ')) {
             try {
@@ -74,7 +98,8 @@ Output MUST be valid JSON matching this structure:
                 onChunk(content);
               }
             } catch (e) {
-              // Ignore parse errors for incomplete chunks
+              // Ignore parse errors for validly structured but incomplete chunks 
+              // (though with proper buffering this should rarely happen unless the upstream JSON is bad)
             }
           }
         }
